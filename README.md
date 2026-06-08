@@ -127,9 +127,9 @@ contas.exe
 Total de posições no arquivo: 0
 Informe a posição (0-indexada): 0
 Número da conta : 1001
-Nome do titular : João da Silva
+Nome do titular : Diogo Alcelino
 CPF             : 123.456.789-00
-Saldo inicial   : R$ 1500.00
+Saldo inicial   : R$ 3649.00
 
 [OK] Cliente cadastrado na posição 0 com sucesso!
 ```
