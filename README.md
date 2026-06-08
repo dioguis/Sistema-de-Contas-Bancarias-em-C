@@ -159,7 +159,5 @@ Saldo inicial   : R$ 1500.00
 
 ---
 
-## 👤 Autor
 
-Desenvolvido como atividade prática da disciplina de **Estruturas de Dados / Programação em C**.
 
