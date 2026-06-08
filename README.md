@@ -36,7 +36,7 @@ Como todos os campos têm tamanho fixo, cada registro ocupa exatamente `sizeof(C
 
 ---
 
-## ⚙️ Funções de I/O Utilizadas
+## Funções de I/O Utilizadas
 
 ### `fseek()`
 Usado para posicionar o ponteiro do arquivo diretamente no registro desejado, sem leitura sequencial:
