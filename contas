@@ -1,0 +1,390 @@
+/*
+ * Sistema de Manutenção de Contas Bancárias
+ * Arquivo binário com registros de tamanho fixo
+ * Funções: fseek(), fread(), fwrite(), rewind()
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define ARQUIVO "contas.bin"
+#define NOME_MAX 50
+#define CPF_MAX  15
+
+/* Estrutura do cliente com tamanho fixo */
+typedef struct {
+    int    numero;          /* número da conta (0 = slot vazio) */
+    char   nome[NOME_MAX];
+    char   cpf[CPF_MAX];
+    double saldo;
+    int    ativo;           /* 1 = ativo, 0 = encerrado/vazio */
+} Cliente;
+
+/* ------------------------------------------------------------------ */
+/* Utilitários                                                         */
+/* ------------------------------------------------------------------ */
+
+void limpar_buffer(void) {
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF);
+}
+
+void pausar(void) {
+    printf("\nPressione ENTER para continuar...");
+    limpar_buffer();
+}
+
+void cabecalho(const char *titulo) {
+    printf("\n========================================\n");
+    printf("  %s\n", titulo);
+    printf("========================================\n");
+}
+
+/* Abre o arquivo (cria se não existir) */
+FILE *abrir_arquivo(const char *modo) {
+    FILE *fp = fopen(ARQUIVO, modo);
+    if (!fp) {
+        /* Tenta criar o arquivo pela primeira vez */
+        fp = fopen(ARQUIVO, "wb+");
+        if (!fp) {
+            perror("Erro ao abrir/criar arquivo");
+        }
+    }
+    return fp;
+}
+
+/* Retorna o total de registros no arquivo */
+long total_registros(FILE *fp) {
+    fseek(fp, 0, SEEK_END);
+    long tam = ftell(fp);
+    return tam / (long)sizeof(Cliente);
+}
+
+/* ------------------------------------------------------------------ */
+/* 1. Cadastrar novo cliente em posição específica                     */
+/* ------------------------------------------------------------------ */
+
+void cadastrar_cliente(void) {
+    cabecalho("CADASTRAR NOVO CLIENTE");
+
+    FILE *fp = abrir_arquivo("rb+");
+    if (!fp) { pausar(); return; }
+
+    long total = total_registros(fp);
+    printf("Total de posições no arquivo: %ld\n", total);
+    printf("(Para criar nova posição, informe %ld ou superior)\n", total);
+
+    long posicao;
+    printf("Informe a posição (0-indexada): ");
+    scanf("%ld", &posicao);
+    limpar_buffer();
+
+    /* Verifica se a posição já contém conta ativa */
+    if (posicao < total) {
+        Cliente temp;
+        fseek(fp, posicao * (long)sizeof(Cliente), SEEK_SET);
+        fread(&temp, sizeof(Cliente), 1, fp);
+        if (temp.ativo) {
+            printf("\n[ERRO] Posição %ld já contém conta ativa (conta nº %d).\n",
+                   posicao, temp.numero);
+            fclose(fp);
+            pausar();
+            return;
+        }
+    }
+
+    Cliente c;
+    memset(&c, 0, sizeof(Cliente));
+
+    printf("Número da conta : ");
+    scanf("%d", &c.numero);
+    limpar_buffer();
+
+    printf("Nome do titular : ");
+    fgets(c.nome, NOME_MAX, stdin);
+    c.nome[strcspn(c.nome, "\n")] = '\0';
+
+    printf("CPF             : ");
+    fgets(c.cpf, CPF_MAX, stdin);
+    c.cpf[strcspn(c.cpf, "\n")] = '\0';
+
+    printf("Saldo inicial   : R$ ");
+    scanf("%lf", &c.saldo);
+    limpar_buffer();
+
+    c.ativo = 1;
+
+    /* Posiciona e grava */
+    fseek(fp, posicao * (long)sizeof(Cliente), SEEK_SET);
+    if (fwrite(&c, sizeof(Cliente), 1, fp) == 1) {
+        printf("\n[OK] Cliente cadastrado na posição %ld com sucesso!\n", posicao);
+    } else {
+        printf("\n[ERRO] Falha ao gravar no arquivo.\n");
+    }
+
+    fclose(fp);
+    pausar();
+}
+
+/* ------------------------------------------------------------------ */
+/* 2. Consultar cliente pelo número da conta                           */
+/* ------------------------------------------------------------------ */
+
+void consultar_cliente(void) {
+    cabecalho("CONSULTAR CLIENTE");
+
+    FILE *fp = abrir_arquivo("rb");
+    if (!fp) { pausar(); return; }
+
+    int numero;
+    printf("Número da conta: ");
+    scanf("%d", &numero);
+    limpar_buffer();
+
+    long total = total_registros(fp);
+    rewind(fp);   /* garante leitura do início */
+
+    int encontrado = 0;
+    for (long i = 0; i < total; i++) {
+        Cliente c;
+        fread(&c, sizeof(Cliente), 1, fp);
+        if (c.ativo && c.numero == numero) {
+            printf("\n--- Dados do Cliente ---\n");
+            printf("Posição no arquivo : %ld\n", i);
+            printf("Número da conta    : %d\n",  c.numero);
+            printf("Nome               : %s\n",  c.nome);
+            printf("CPF                : %s\n",  c.cpf);
+            printf("Saldo              : R$ %.2f\n", c.saldo);
+            encontrado = 1;
+            break;
+        }
+    }
+
+    if (!encontrado)
+        printf("\n[AVISO] Conta nº %d não encontrada ou encerrada.\n", numero);
+
+    fclose(fp);
+    pausar();
+}
+
+/* ------------------------------------------------------------------ */
+/* 3. Atualizar saldo de um cliente                                    */
+/* ------------------------------------------------------------------ */
+
+void atualizar_saldo(void) {
+    cabecalho("ATUALIZAR SALDO");
+
+    FILE *fp = abrir_arquivo("rb+");
+    if (!fp) { pausar(); return; }
+
+    int numero;
+    printf("Número da conta: ");
+    scanf("%d", &numero);
+    limpar_buffer();
+
+    long total = total_registros(fp);
+    rewind(fp);
+
+    int encontrado = 0;
+    for (long i = 0; i < total; i++) {
+        Cliente c;
+        long pos = ftell(fp);          /* posição antes do fread */
+        fread(&c, sizeof(Cliente), 1, fp);
+        if (c.ativo && c.numero == numero) {
+            printf("Saldo atual: R$ %.2f\n", c.saldo);
+
+            int opcao;
+            printf("1 - Depositar\n2 - Sacar\nOpção: ");
+            scanf("%d", &opcao);
+            limpar_buffer();
+
+            double valor;
+            printf("Valor: R$ ");
+            scanf("%lf", &valor);
+            limpar_buffer();
+
+            if (valor <= 0) {
+                printf("\n[ERRO] Valor inválido.\n");
+                break;
+            }
+
+            if (opcao == 2) {
+                if (valor > c.saldo) {
+                    printf("\n[ERRO] Saldo insuficiente.\n");
+                    break;
+                }
+                c.saldo -= valor;
+            } else {
+                c.saldo += valor;
+            }
+
+            /* Volta à posição do registro e reescreve */
+            fseek(fp, pos, SEEK_SET);
+            fwrite(&c, sizeof(Cliente), 1, fp);
+            printf("\n[OK] Saldo atualizado: R$ %.2f\n", c.saldo);
+            encontrado = 1;
+            break;
+        }
+    }
+
+    if (!encontrado)
+        printf("\n[AVISO] Conta nº %d não encontrada.\n", numero);
+
+    fclose(fp);
+    pausar();
+}
+
+/* ------------------------------------------------------------------ */
+/* 4. Encerrar conta (remover cliente)                                 */
+/* ------------------------------------------------------------------ */
+
+void encerrar_conta(void) {
+    cabecalho("ENCERRAR CONTA");
+
+    FILE *fp = abrir_arquivo("rb+");
+    if (!fp) { pausar(); return; }
+
+    int numero;
+    printf("Número da conta a encerrar: ");
+    scanf("%d", &numero);
+    limpar_buffer();
+
+    long total = total_registros(fp);
+    rewind(fp);
+
+    int encontrado = 0;
+    for (long i = 0; i < total; i++) {
+        Cliente c;
+        long pos = ftell(fp);
+        fread(&c, sizeof(Cliente), 1, fp);
+        if (c.ativo && c.numero == numero) {
+            printf("Titular: %s | Saldo: R$ %.2f\n", c.nome, c.saldo);
+            printf("Confirma o encerramento? (s/n): ");
+            char resp;
+            scanf(" %c", &resp);
+            limpar_buffer();
+
+            if (resp == 's' || resp == 'S') {
+                c.ativo = 0;          /* marca como inativo */
+                fseek(fp, pos, SEEK_SET);
+                fwrite(&c, sizeof(Cliente), 1, fp);
+                printf("\n[OK] Conta nº %d encerrada.\n", numero);
+            } else {
+                printf("\nOperação cancelada.\n");
+            }
+            encontrado = 1;
+            break;
+        }
+    }
+
+    if (!encontrado)
+        printf("\n[AVISO] Conta nº %d não encontrada.\n", numero);
+
+    fclose(fp);
+    pausar();
+}
+
+/* ------------------------------------------------------------------ */
+/* 5. Listar todos os clientes                                         */
+/* ------------------------------------------------------------------ */
+
+void listar_clientes(FILE *fp) {
+    cabecalho("LISTAGEM DE CLIENTES");
+
+    long total = total_registros(fp);
+    if (total == 0) {
+        printf("Nenhum registro no arquivo.\n");
+        return;
+    }
+
+    printf("%-6s %-8s %-30s %-15s %12s\n",
+           "Pos.", "Conta", "Nome", "CPF", "Saldo (R$)");
+    printf("--------------------------------------------------------------\n");
+
+    int encontrou = 0;
+    for (long i = 0; i < total; i++) {
+        Cliente c;
+        fread(&c, sizeof(Cliente), 1, fp);
+        if (c.ativo) {
+            printf("%-6ld %-8d %-30s %-15s %12.2f\n",
+                   i, c.numero, c.nome, c.cpf, c.saldo);
+            encontrou = 1;
+        }
+    }
+
+    if (!encontrou)
+        printf("Nenhuma conta ativa encontrada.\n");
+}
+
+void menu_listar(void) {
+    FILE *fp = abrir_arquivo("rb");
+    if (!fp) { pausar(); return; }
+    rewind(fp);           /* garante início da leitura */
+    listar_clientes(fp);
+    fclose(fp);
+    pausar();
+}
+
+/* ------------------------------------------------------------------ */
+/* 6. Restaurar leitura com rewind() e relistar                       */
+/* ------------------------------------------------------------------ */
+
+void relistar_com_rewind(void) {
+    cabecalho("RELEITURA COM rewind()");
+    printf("Restaurando ponteiro para o início do arquivo...\n\n");
+
+    FILE *fp = abrir_arquivo("rb");
+    if (!fp) { pausar(); return; }
+
+    rewind(fp);   /* <-- rewind() explícito conforme enunciado */
+    listar_clientes(fp);
+    fclose(fp);
+    pausar();
+}
+
+/* ------------------------------------------------------------------ */
+/* Menu principal                                                      */
+/* ------------------------------------------------------------------ */
+
+void exibir_menu(void) {
+    printf("\n========================================\n");
+    printf("   SISTEMA DE MANUTENÇÃO DE CONTAS\n");
+    printf("========================================\n");
+    printf("  1. Cadastrar novo cliente\n");
+    printf("  2. Consultar cliente por conta\n");
+    printf("  3. Atualizar saldo\n");
+    printf("  4. Encerrar conta\n");
+    printf("  5. Listar todos os clientes\n");
+    printf("  6. Relistar (rewind)\n");
+    printf("  7. Sair\n");
+    printf("----------------------------------------\n");
+    printf("  Opção: ");
+}
+
+int main(void) {
+    int opcao;
+
+    do {
+        exibir_menu();
+        scanf("%d", &opcao);
+        limpar_buffer();
+
+        switch (opcao) {
+            case 1: cadastrar_cliente();    break;
+            case 2: consultar_cliente();    break;
+            case 3: atualizar_saldo();      break;
+            case 4: encerrar_conta();       break;
+            case 5: menu_listar();          break;
+            case 6: relistar_com_rewind();  break;
+            case 7:
+                printf("\nEncerrando o sistema. Até logo!\n\n");
+                break;
+            default:
+                printf("\n[ERRO] Opção inválida.\n");
+                pausar();
+        }
+    } while (opcao != 7);
+
+    return 0;
+}
